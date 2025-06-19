@@ -10,7 +10,7 @@ Diffusive Equilibrium Code with Phase Space Hole (PSH) support
 for finding steady state plasma Densities at extrapolated location s 
 given plasma parameters at s along same magnetic field line trace. 
 s is arc length along field line.
-In assumed non inertial rotating frame with planet at \Omega in rad/s,
+In assumed non inertial rotating frame with planet at Omega in rad/s,
 or with fraction of corotation fcor given
 along fixed magnetic field lines given field line traces,
 including gravitational potential energy (only important close to planet), 
@@ -68,6 +68,16 @@ __all__ = ['Species', 'define_planet', 'maxwellian_density', 'aniso_maxwellian_d
 import numpy as np
 
 import matplotlib.pyplot as plt
+plt.ion()  # Turn on interactive mode for command line use
+
+# Uncomment the following lines if using numpy version 1.x instead of 2.x 
+# to fix issue loading pickled .npz files
+"""
+import sys
+if not hasattr(np, '_core') and hasattr(np, 'core'):
+    sys.modules['numpy._core'] = np.core
+    sys.modules['numpy._core.multiarray'] = np.core.multiarray
+"""
 
 
 # CODATA RECOMMENDED VALUES OF THE FUNDAMENTAL PHYSICAL CONSTANTS: 2022, physics.nist.gov/constants
@@ -315,6 +325,7 @@ if __name__ == '__main__':
 
     species_labels = [r'O$^{+}$', r'O$^{++}$', r'S$^{+}$', r'S$^{++}$', r'S$^{+++}$', r'H$^{+}$', r'Na$^{+}$', r'O$^{+}$(hot)', r'eh$^{-}$', r'e$^{-}$']
     
+    plt.figure(figsize=(10, 6))
     for i in range(nspec):
         key = species_names[i]
         lbl = species_labels[i]
@@ -334,14 +345,14 @@ if __name__ == '__main__':
     plt.savefig(species_type[0] + "_diff_eq_densities_vs_s_log_aligned_Io_fl_psh.png", dpi=600, bbox_inches="tight")
     plt.show()
     
-    
+    plt.figure(figsize=(10, 6))
     for i in range(nspec):
         key = species_names[i]
         lbl = species_labels[i]
         plt.plot(lat,n[key],label=lbl)
     plt.yscale('log')
     plt.title(species_type[0].replace('_', ' ') + " Diffusive Equilibrium with PSH, Aligned Io Field Line")
-    plt.xlabel(r"Latitude$_{\text{III}}$ ($\degree$)")
+    plt.xlabel(r"Latitude$_{III}$ ($\degree$)")
     plt.ylabel(r"n (cm$^{-3}$)")
     plt.legend(fontsize='x-small', ncol=2)
     plt.grid()
@@ -351,54 +362,56 @@ if __name__ == '__main__':
 
     # In current version Temps and kappa values returned are same as in version without psh these will be updated in next version so not plotted for now
     """
-
+    plt.figure(figsize=(10, 6))
     for i in range(nspec):
         key = species_names[i]
         lbl = species_labels[i]
         plt.plot(lat,T_par[key],label=lbl)
     plt.yscale('log')
     plt.title(species_type[0].replace('_', ' ') + " Diffusive Equilibrium with PSH, Aligned Io Field Line")
-    plt.xlabel(r"Latitude$_{\text{III}}$ ($\degree$)")
+    plt.xlabel(r"Latitude$_{III}$ ($\degree$)")
     plt.ylabel(r"T$_{\parallel}$ (eV)")
     plt.legend(fontsize='x-small', ncol=2)
     plt.grid()
     plt.savefig(species_type[0] + "_all_diff_eq_Tpar_vs_lat_log_aligned_Io_fl_psh.png", dpi=600, bbox_inches="tight")
     plt.show()
     
-    
+    plt.figure(figsize=(10, 6))
     for i in range(nspec):
         key = species_names[i]
         lbl = species_labels[i]
         plt.plot(lat,T_perp[key],label=lbl)
     plt.yscale('log')
     plt.title(species_type[0].replace('_', ' ') + " Diffusive Equilibrium with PSH, Aligned Io Field Line")
-    plt.xlabel(r"Latitude$_{\text{III}}$ ($\degree$)")
+    plt.xlabel(r"Latitude$_{III}$ ($\degree$)")
     plt.ylabel(r"T$_{\perp}$ (eV)")
     plt.legend(fontsize='x-small', ncol=2)
     plt.grid()
     plt.savefig(species_type[0] + "_all_diff_eq_Tperp_vs_lat_log_aligned_Io_fl_psh.png", dpi=600, bbox_inches="tight")
     plt.show()
 
+    plt.figure(figsize=(10, 6))
     for i in range(nspec):
         key = species_names[i]
         lbl = species_labels[i]
         plt.plot(lat,kappa_par[key],label=lbl)
     plt.yscale('log')
     plt.title(species_type[0].replace('_', ' ') + " Diffusive Equilibrium with PSH, Aligned Io Field Line")
-    plt.xlabel(r"Latitude$_{\text{III}}$ ($\degree$)")
+    plt.xlabel(r"Latitude$_{III}$ ($\degree$)")
     plt.ylabel(r"$\kappa_{\parallel}$ (eV)")
     plt.legend(fontsize='x-small', ncol=2)
     plt.grid()
     plt.savefig(species_type[0] + "_all_diff_eq_kappa_par_vs_lat_log_aligned_Io_fl_psh.png", dpi=600, bbox_inches="tight")
     plt.show()
     
+    plt.figure(figsize=(10, 6))
     for i in range(nspec):
         key = species_names[i]
         lbl = species_labels[i]
         plt.plot(lat,kappa_perp[key],label=lbl)
     plt.yscale('log')
     plt.title(species_type[0].replace('_', ' ') + " Diffusive Equilibrium with PSH, Aligned Io Field Line")
-    plt.xlabel(r"Latitude$_{\text{III}}$ ($\degree$)")
+    plt.xlabel(r"Latitude$_{III}$ ($\degree$)")
     plt.ylabel(r"$\kappa_{\perp}$ (eV)")
     plt.legend(fontsize='x-small', ncol=2)
     plt.grid()
