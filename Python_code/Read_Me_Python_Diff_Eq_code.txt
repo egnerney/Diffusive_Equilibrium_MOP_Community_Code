@@ -1,10 +1,10 @@
-Cite **Nerney (2025)** if you use the solver in published work or code.
+Cite **Nerney (2025) http://doi.org/10.5281/zenodo.15623974 ** if you use the solver in published work or code.
 We give permission to incorporate these routines into a user program if the copyright is acknowledged and Nerney (2025) is cited.
 
 Read Me For Python Diffusive Equilibrium Code:
-Tested on Python 3.12.10 but should work on any modern Python.
+Tested on Python 3.12.10 but should work on any modern Python. Though if using numpy 1.x instead of 2.x, uncomment lines at the top of the test script for loading .npz files due to pickling incompatibility issue. 
 
-Requires numpy and scipy libraries for computation and matplotlib for plotting. 
+Requires numpy and scipy libraries for computation and matplotlib for plotting in basic use test script. Tested with numpy version '2.2.6', scipy version '1.15.2', and matplotlib version '3.10.3'. With uncommented lines at top of test script it also was tested and works with python 3.8.20, numpy '1.24.4', scipy '1.10.1', and matplotlib '3.7.3'. 
 
 These can be installed via conda install numpy scipy matplotlib 
 or if you prefer pip intsall numpy scipy matplotlib
@@ -70,5 +70,5 @@ SOFTWARE.
 
 
 
-Cite **Nerney (2025)** if you use the solver in published work or code.
+Cite **Nerney (2025) http://doi.org/10.5281/zenodo.15623974 ** if you use the solver in published work or code.
 We give permission to incorporate this routine into a user program if the copyright is acknowledged and Nerney (2025) is cited.
