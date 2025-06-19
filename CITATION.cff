@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata from this file."
+title: "Diffusive Equilibrium MOP Community Code"
+abstract: >
+  Diffusive Equilibrium MOP Community Code for computing steady state plasma
+  distributions in rapidly rotating magnetospheres for various distribution 
+  functions with and without phase space holes under various assumptions.
+authors:
+  - family-names: "Nerney"
+    given-names: "Edward G. (Eddie)"
+    orcid: "https://orcid.org/0000-0002-4938-5621"
+version: "v1.0.0"
+date-released: 2025-06-09
+doi: 10.5281/zenodo.15623974
+repository-code: "https://github.com/egnerney/Diffusive_Equilibrium_MOP_Community_Code"
+license: "MIT"
+type: software
