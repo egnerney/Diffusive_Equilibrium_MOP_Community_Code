@@ -1,7 +1,10 @@
 !=======================================================================
 !  basic_example_use_of_diffusive_equilibrium_code_mpi.f90
-!Created May 2025
-!Modified for MPI parallelization
+!
+! MPI Parallelized version using static block decomposition
+! into near equal chunks given number of processors in mpi call.
+!
+!Created June 2025
 !
 !@author: Edward (Eddie) G. Nerney
 !
@@ -52,10 +55,16 @@ program basic_example_use_of_diffusive_equilibrium_code_mpi
    !--------------------------------------------------------------------
    use, intrinsic :: iso_fortran_env , only : dp => real64
    use, intrinsic :: ieee_arithmetic, only : ieee_value, ieee_quiet_nan
-   use mpi  ! MPI module for parallelization
+   use mpi
    use npy_reader
    use diffusive_equilibrium_mod
    implicit none
+
+   !--------------------------------------------------------------------
+   !  MPI bookkeeping – *variables only*.  Calls come after declarations.
+   !--------------------------------------------------------------------
+   integer :: ierr, rank, nprocs
+
    !--------------------------------------------------------------------
    !  0.  Physical constants
    !--------------------------------------------------------------------
@@ -63,35 +72,26 @@ program basic_example_use_of_diffusive_equilibrium_code_mpi
    real(dp), parameter :: e_charge    = 1.602176634d-19
    real(dp), parameter :: EV_TO_JOULE = e_charge
    real(dp), parameter :: JOULE_TO_EV = 1.0_dp / e_charge
+
    !--------------------------------------------------------------------
-   !  1.  Field-line arrays
+   !  1.  Field‑line arrays
    !--------------------------------------------------------------------
    real(dp), allocatable :: s(:),x(:),y(:),z(:),rho(:),r(:),lat(:),wlon(:),B(:)
    integer :: npoints
+
    !--------------------------------------------------------------------
-   !  2.  Reference-model matrices (601×10)
+   !  2.  Reference‑model matrices (601×10)
    !--------------------------------------------------------------------
    real(dp), allocatable :: n0_mat(:,:),T0_mat(:,:),k0_mat(:,:),kappaT0(:,:),tmp2(:,:)
+
    !--------------------------------------------------------------------
-   !  3.  Species meta-data
+   !  3.  Species meta‑data
    !--------------------------------------------------------------------
    integer, parameter         :: nspec      = 10
-   integer, parameter         :: iofl_idx   = 191   ! Io field-line in ρ grid
-   !--------------------------------------------------------------------
-   !  Species display labels (uniform length = 7)
-   !--------------------------------------------------------------------
-   character(len=7), dimension(nspec), parameter :: spname =  &
-        [ character(len=7) ::                              &
-        'O+',      &  ! 2 chars, padded with blanks
-        'O++',     &  ! 3
-        'S+',      &  ! 2
-        'S++',     &  ! 3
-        'S+++',    &  ! 4
-        'H+',      &  ! 2
-        'Na+',     &  ! 3
-        'O+(hot)', &  ! 7 (longest) so we set len to 7 adjust accordingly in len above 
-        'eh-',     &  ! 3
-        'e-' ]        ! 2
+   integer, parameter         :: iofl_idx   = 191      ! Io field‑line in ρ grid
+   character(len=7), dimension(nspec), parameter :: spname = [ character(len=7) :: &
+        'O+', 'O++', 'S+', 'S++', 'S+++', 'H+', 'Na+', 'O+(hot)', 'eh-', 'e-' ]
+
 
    real(dp), parameter :: m_e  = 5.485799090441d-4
    real(dp), parameter :: m_H  =  1.0078_dp
@@ -100,6 +100,8 @@ program basic_example_use_of_diffusive_equilibrium_code_mpi
    real(dp), parameter :: m_Na = 22.990_dp
    real(dp)                       :: m_u(nspec), q_unit(nspec)
    real(dp)                       :: A_arr(nspec), lam_arr(nspec)
+
+   ! Distribution‑function tag  (may be changed to any of the options below)
    !Avaiable Distribution Types:
    !character(len=32)              :: dist_tag = 'Maxwellian' ! Bagenal & Sullivan (1981) etc. Basic default Assumed isotropic always, ignores anisotropy
    !character(len=32)              :: dist_tag = 'Aniso_Maxwellian' ! Huang & Birmingham (1992) Anisotropic Maxwellian
@@ -110,15 +112,15 @@ program basic_example_use_of_diffusive_equilibrium_code_mpi
   
    character(len=32)              :: dist_tag = 'Aniso_Maxwellian' ! Huang & Birmingham (1992) Anisotropic Maxwellian
    
-   ! User-friendly title   ("Aniso_Maxwellian" → "Aniso Maxwellian") or whatever dist_tag is set to above raplces underscores with space for titles
+
+   ! User‑friendly version of tag (underscores → spaces)
    character(len=:), allocatable :: nice_tag
    integer :: pos
-   
 
-   ! When building titles / filenames use nice_tag or trimmed tag
-   type(species_type)             :: sp(nspec)
-   integer, parameter             :: cold_e_idx = 10
-   integer                         :: j
+   type(species_type) :: sp(nspec)
+   integer, parameter :: cold_e_idx = 10
+   integer            :: j
+
    !--------------------------------------------------------------------
    !  4.  Planet geometry
    !--------------------------------------------------------------------
@@ -127,37 +129,32 @@ program basic_example_use_of_diffusive_equilibrium_code_mpi
    real(dp)                    :: pvals(3), B0
    integer                     :: ceq_idx
    real(dp), allocatable       :: Bratio(:), dU(:)
+
    !--------------------------------------------------------------------
    !  5.  Output arrays
    !--------------------------------------------------------------------
    real(dp), allocatable :: n_out(:,:), Tpar_out(:,:), Tperp_out(:,:)
    real(dp), allocatable :: kpar_out(:,:), kperp_out(:,:), phi_out(:)
+
    !--------------------------------------------------------------------
    !  Working scalars
    !--------------------------------------------------------------------
-   integer :: i
+   integer :: i, i_first, i_last, n_base, n_left, loc_len
    real(dp) :: Ttmp(2), Ktmp(2)
    type(diffeq_result_type) :: sol
    real(dp), parameter :: BIG = 1.0e100_dp
    real(dp) :: nan_dp
    integer :: npeak, ii
    real(dp), allocatable :: lat_peak(:), dU_row(:)
-   
-   !--------------------------------------------------------------------
-   !  MPI variables
-   !--------------------------------------------------------------------
-   integer :: ierr, rank, nprocs
-   integer :: local_start, local_end, local_count
-   real(dp), allocatable :: local_n_out(:,:), local_Tpar_out(:,:), local_Tperp_out(:,:)
-   real(dp), allocatable :: local_kpar_out(:,:), local_kperp_out(:,:), local_phi_out(:)
-   integer, allocatable :: recvcounts(:), displs(:)
 
    !====================================================================
-   !  Initialize MPI
+   !  ----------  EXECUTABLE SECTION STARTS HERE  ----------------------
    !====================================================================
    call MPI_Init(ierr)
-   call MPI_Comm_rank(MPI_COMM_WORLD, rank, ierr)
+   call MPI_Comm_rank(MPI_COMM_WORLD, rank , ierr)
    call MPI_Comm_size(MPI_COMM_WORLD, nprocs, ierr)
+
+   if (rank == 0) write(*,'(a,i0)') 'MPI ranks active: ', nprocs
 
    nan_dp = ieee_value(0.0_dp, ieee_quiet_nan)
 
@@ -166,24 +163,27 @@ program basic_example_use_of_diffusive_equilibrium_code_mpi
    do pos = 1, len_trim(nice_tag)
       if (nice_tag(pos:pos) == '_') nice_tag(pos:pos) = ' '
    end do
-   !====================================================================
-   !  Load field-line vectors (all processes load the data)
-   !====================================================================
+
+   !--------------------------------------------------------------------
+   !  Load field‑line vectors (each rank reads its own copy – small files)
+   !--------------------------------------------------------------------
    call read_npy_1d(s,   's.npy');      npoints = size(s)
    call read_npy_1d(x,   'x.npy');      call read_npy_1d(y,   'y.npy')
    call read_npy_1d(z,   'z.npy');      call read_npy_1d(rho, 'rho.npy')
    call read_npy_1d(r,   'r.npy');      call read_npy_1d(lat, 'lat.npy')
    call read_npy_1d(wlon,'wlong.npy');  call read_npy_1d(B,   'B.npy')
-   !====================================================================
-   !  Load reference model matrices (all processes load the data)
-   !====================================================================
+
+   !--------------------------------------------------------------------
+   !  Load reference model matrices
+   !--------------------------------------------------------------------
    call read_npy_2d(tmp2,'n0.npy');            n0_mat  = tmp2
    call read_npy_2d(tmp2,'T0.npy');            T0_mat  = tmp2
    call read_npy_2d(tmp2,'kappa0.npy');        k0_mat  = tmp2
    call read_npy_2d(tmp2,'kappa_temps_0.npy'); kappaT0 = tmp2
-   !====================================================================
-   !  Build species array (all processes build the same array)
-   !====================================================================
+
+   !--------------------------------------------------------------------
+   !  Build species array
+   !--------------------------------------------------------------------
    m_u = [ (m_O-m_e), (m_O-2*m_e), (m_S-m_e), (m_S-2*m_e), (m_S-3*m_e), &
            (m_H-m_e), (m_Na-m_e),  (m_O-m_e), m_e, m_e ]
    q_unit = [ 1,2,1,2,3, 1,1,1,-1,-1 ]
@@ -199,24 +199,25 @@ program basic_example_use_of_diffusive_equilibrium_code_mpi
                             lam_arr(j), n0_mat(iofl_idx,j),       &
                             dist_tag )
    end do
-   !====================================================================
-   !  Planet constants & ΔU (all processes compute)
-   !====================================================================
-   pvals  = define_planet(planet_)
+
+   !--------------------------------------------------------------------
+   !  Planet constants & ΔU
+   !--------------------------------------------------------------------
+   pvals   = define_planet(planet_)
    ceq_idx = maxloc(rho, dim=1)
-   B0   = B(ceq_idx)
+   B0      = B(ceq_idx)
    allocate(Bratio(npoints), dU(npoints))
    Bratio = B / B0
    do i = 1, npoints
       dU(i) = calc_deltau( r(ceq_idx), lat(ceq_idx), r(i), lat(i), planet_, fcor )
    end do
-   !====================================================================
-   !  Quick ΔU vs latitude plot (only root process)
-   !====================================================================
+
+   !--------------------------------------------------------------------
+   !  Quick ΔU vs latitude plot (rank 0 only)
+   !--------------------------------------------------------------------
    if (rank == 0) then
-      ! --- compute local maxima (simple 3-point criterion) ---------------
       allocate(lat_peak(npoints))
-      allocate(dU_row(npoints)); dU_row = dU 
+      allocate(dU_row(npoints)); dU_row = dU
       npeak = 0
       do ii = 2, npoints-1
          if ( dU(ii) > dU(ii-1) .and. dU(ii) > dU(ii+1) ) then
@@ -224,110 +225,83 @@ program basic_example_use_of_diffusive_equilibrium_code_mpi
             lat_peak(npeak) = lat(ii)
          end if
       end do
-      if (npeak>0) lat_peak = lat_peak(:npeak)          ! trim
+      if (npeak>0) lat_peak = lat_peak(:npeak)
 
       call make_plot_gnuplot(lat, reshape(dU_row,[1,npoints]),         &
            ['ΔU'], 'Latitude (deg)', 'ΔU (J/kg)',                      &
            'Io FL: centrifugal+grav ΔU', 'deltaU_vs_lat.png',          &
-           vlines = lat_peak)          
+           vlines = lat_peak)
    end if
+
+   !--------------------------------------------------------------------
+   !  Allocate & zero‑initialise outputs
+   !--------------------------------------------------------------------
+   allocate( n_out(nspec,npoints) ); n_out       = 0.0_dp
+   allocate( Tpar_out(nspec,npoints) ); Tpar_out = 0.0_dp
+   allocate( Tperp_out(nspec,npoints)); Tperp_out= 0.0_dp
+   allocate( kpar_out(nspec,npoints) ); kpar_out = 0.0_dp
+   allocate( kperp_out(nspec,npoints)); kperp_out= 0.0_dp
+   allocate( phi_out(npoints)        ); phi_out  = 0.0_dp
+
    !====================================================================
-   !  Distribute work among MPI processes
+   !  Main field‑line loop parallelized with static block decomposition
    !====================================================================
-   ! Calculate local work distribution
-   local_count = npoints / nprocs
-   local_start = rank * local_count + 1
-   if (rank == nprocs - 1) then
-      ! Last process handles remaining points
-      local_end = npoints
-      local_count = local_end - local_start + 1
+   n_base = npoints / nprocs
+   n_left = mod(npoints, nprocs)
+   if (rank < n_left) then
+      i_first = rank*(n_base+1) + 1
+      i_last  = i_first + n_base          ! inclusive
    else
-      local_end = local_start + local_count - 1
+      i_first = rank*n_base + n_left + 1
+      i_last  = i_first + n_base - 1
    end if
-   
-   !====================================================================
-   !  Allocate local output arrays
-   !====================================================================
-   allocate( local_n_out(nspec,local_count), local_Tpar_out(nspec,local_count), local_Tperp_out(nspec,local_count))
-   allocate( local_kpar_out(nspec,local_count),local_kperp_out(nspec,local_count), local_phi_out(local_count))
-   
-   ! Allocate global arrays only on root
-   if (rank == 0) then
-      allocate( n_out(nspec,npoints), Tpar_out(nspec,npoints), Tperp_out(nspec,npoints))
-      allocate( kpar_out(nspec,npoints),kperp_out(nspec,npoints), phi_out(npoints))
-   end if
-   
-   !====================================================================
-   !  Main field-line loop - each process handles its subset
-   !====================================================================
-   do i = 1, local_count
-      ! Global index
-      ii = local_start + i - 1
-      
-      if (rank == 0 .and. mod(ii-1,100)==0) write(*,'(a,i0,a,i0)') 'point ',ii-1,' / ',npoints-1
-      
-      sol = diff_eq(sp, dU(ii), Bratio(ii), cold_e_idx)
-      local_n_out(:,i) = sol%n
-      local_phi_out(i) = sol%phi
+   loc_len = i_last - i_first + 1
+
+   if (rank == 0) write(*,*) 'Solving field‑line points …'
+
+   do i = i_first, i_last
+      if (rank == 0) then
+         if (mod(i-1,100)==0) write(*,'(a,i0,a,i0)') 'point ',i-1,' / ',npoints-1
+      end if
+
+      sol = diff_eq(sp, dU(i), Bratio(i), cold_e_idx)
+      n_out(:,i) = sol%n
+      phi_out(i) = sol%phi
+
       do j = 1, nspec
-         Ttmp = get_temperature(sp(j), dU(ii), local_phi_out(i), Bratio(ii))
-         local_Tpar_out(j,i)  = Ttmp(1)
-         local_Tperp_out(j,i) = Ttmp(2)
-         Ktmp = get_kappa(sp(j), dU(ii), local_phi_out(i), Bratio(ii))
-         local_kpar_out(j,i)  = Ktmp(1)
-         local_kperp_out(j,i) = Ktmp(2)
+         Ttmp = get_temperature(sp(j), dU(i), phi_out(i), Bratio(i))
+         Tpar_out (j,i) = Ttmp(1)
+         Tperp_out(j,i) = Ttmp(2)
+
+         Ktmp = get_kappa(sp(j), dU(i), phi_out(i), Bratio(i))
+         kpar_out (j,i) = Ktmp(1)
+         kperp_out(j,i) = Ktmp(2)
       end do
    end do
-   
-   !====================================================================
-   !  Gather results to root process
-   !====================================================================
-   ! Setup for MPI_Gatherv
-   allocate(recvcounts(nprocs), displs(nprocs))
-   call MPI_Gather(local_count, 1, MPI_INTEGER, recvcounts, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
-   
+
+   !--------------------------------------------------------------------
+   !  Combine results – sum works because other ranks hold zeros
+   !--------------------------------------------------------------------
+   call MPI_Allreduce(MPI_IN_PLACE, n_out,     nspec*npoints, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, ierr)
+   call MPI_Allreduce(MPI_IN_PLACE, Tpar_out,  nspec*npoints, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, ierr)
+   call MPI_Allreduce(MPI_IN_PLACE, Tperp_out, nspec*npoints, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, ierr)
+   call MPI_Allreduce(MPI_IN_PLACE, kpar_out,  nspec*npoints, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, ierr)
+   call MPI_Allreduce(MPI_IN_PLACE, kperp_out, nspec*npoints, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, ierr)
+   call MPI_Allreduce(MPI_IN_PLACE, phi_out,            npoints, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, ierr)
+
+   if (rank == 0) write(*,*) 'All points solved (parallel).'
+
+   !--------------------------------------------------------------------
+   !  Mask “infinite” κ for Maxwellian limit
+   !--------------------------------------------------------------------
    if (rank == 0) then
-      displs(1) = 0
-      do i = 2, nprocs
-         displs(i) = displs(i-1) + recvcounts(i-1)
-      end do
+      where (kpar_out  > BIG) kpar_out  = nan_dp
+      where (kperp_out > BIG) kperp_out = nan_dp
    end if
-   
-   ! Gather phi_out
-   call MPI_Gatherv(local_phi_out, local_count, MPI_DOUBLE_PRECISION, &
-                    phi_out, recvcounts, displs, MPI_DOUBLE_PRECISION, &
-                    0, MPI_COMM_WORLD, ierr)
-   
-   ! Gather n_out, Tpar_out, Tperp_out, kpar_out, kperp_out for each species
-   do j = 1, nspec
-      call MPI_Gatherv(local_n_out(j,:), local_count, MPI_DOUBLE_PRECISION, &
-                       n_out(j,:), recvcounts, displs, MPI_DOUBLE_PRECISION, &
-                       0, MPI_COMM_WORLD, ierr)
-      
-      call MPI_Gatherv(local_Tpar_out(j,:), local_count, MPI_DOUBLE_PRECISION, &
-                       Tpar_out(j,:), recvcounts, displs, MPI_DOUBLE_PRECISION, &
-                       0, MPI_COMM_WORLD, ierr)
-      
-      call MPI_Gatherv(local_Tperp_out(j,:), local_count, MPI_DOUBLE_PRECISION, &
-                       Tperp_out(j,:), recvcounts, displs, MPI_DOUBLE_PRECISION, &
-                       0, MPI_COMM_WORLD, ierr)
-      
-      call MPI_Gatherv(local_kpar_out(j,:), local_count, MPI_DOUBLE_PRECISION, &
-                       kpar_out(j,:), recvcounts, displs, MPI_DOUBLE_PRECISION, &
-                       0, MPI_COMM_WORLD, ierr)
-      
-      call MPI_Gatherv(local_kperp_out(j,:), local_count, MPI_DOUBLE_PRECISION, &
-                       kperp_out(j,:), recvcounts, displs, MPI_DOUBLE_PRECISION, &
-                       0, MPI_COMM_WORLD, ierr)
-   end do
-   
-   if (rank == 0) then
-      write(*,*) 'All points solved.'
-   end if
-   
-   !====================================================================
-   !  Produce six PNG plots (only root process)
-   !====================================================================
+
+   !--------------------------------------------------------------------
+   !  Produce six PNG plots  (rank 0 only)
+   !--------------------------------------------------------------------
    if (rank == 0) then
       call make_plot_gnuplot(s, n_out, spname,                      &
            's (R_J)', 'n (m^{-3})', nice_tag//' n vs s',            &
@@ -341,12 +315,6 @@ program basic_example_use_of_diffusive_equilibrium_code_mpi
       call make_plot_gnuplot(lat, Tperp_out*JOULE_TO_EV, spname,    &
            'Latitude (deg)', 'T⊥ (eV)', nice_tag//' T⊥ vs lat',      &
            trim(dist_tag)//'_Tperp_vs_lat.png', logy=.true.)
-
-      ! should have been done in diffusive_equilbrium_mod.f90 kappa value funcs for Maxwellians but for now just done here, though in reality the Maxwellian limit is
-      !  actually the infinite kappa limit for consistency accross languages we set it to NaNs
-      where (kpar_out  > BIG) kpar_out  = nan_dp   ! NaN mask
-      where (kperp_out > BIG) kperp_out = nan_dp
-      
       call make_plot_gnuplot(lat, kpar_out, spname,                 &
            'Latitude (deg)', 'κ‖', nice_tag//' κ‖ vs lat',           &
            trim(dist_tag)//'_kappa_par_vs_lat.png', logy=.true.)
@@ -355,23 +323,21 @@ program basic_example_use_of_diffusive_equilibrium_code_mpi
            trim(dist_tag)//'_kappa_perp_vs_lat.png', logy=.true.)
       write(*,*) 'PNG files written – done.'
    end if
-   
-   !====================================================================
-   !  Finalize MPI
-   !====================================================================
+
    call MPI_Finalize(ierr)
 
-
- contains
-   ! Attempt to get first 10 matplotlib default like colors for plots in gnuplot
+!-----------------------------------------------------------------------
+!  Helper functions / subroutines  (unchanged from serial version)
+!-----------------------------------------------------------------------
+contains
    pure function tab10_hex(idx) result(col)
-     !! index 0…9 → Matplotlib "tab10" hex string
-     integer, intent(in) :: idx
-     character(len=9)    :: col
-     character(len=9), dimension(10), parameter :: tab10 = [ &
-          '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', &
-          '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf' ]
-     col = tab10(mod(idx,10) + 1)
+      !! index 0…9 → Matplotlib “tab10” hex string
+      integer, intent(in) :: idx
+      character(len=9)    :: col
+      character(len=9), dimension(10), parameter :: tab10 = [ &
+           '#1f77b4','#ff7f0e','#2ca02c','#d62728','#9467bd', &
+           '#8c564b','#e377c2','#7f7f7f','#bcbd22','#17becf' ]
+      col = tab10(mod(idx,10) + 1)
    end function tab10_hex
 
    pure function to_string(r) result(txt)
@@ -381,7 +347,7 @@ program basic_example_use_of_diffusive_equilibrium_code_mpi
    end function to_string
 
 !-----------------------------------------------------------------------
-!  gnuplot helper  –  skips all-NaN curves and can draw vertical lines
+!  gnuplot helper  –  skips all‑NaN curves and can draw vertical lines
 !-----------------------------------------------------------------------
 subroutine make_plot_gnuplot(x, y, lbl, xt, yt, ttl, fname, logy, vlines)
    use, intrinsic :: iso_fortran_env ,  only : dp=>real64
@@ -417,10 +383,10 @@ subroutine make_plot_gnuplot(x, y, lbl, xt, yt, ttl, fname, logy, vlines)
    open (newunit = udat, file = '__tmp_data.dat', status = 'replace')
 
    do i = 1, npts
-      ! We keep ALL rows and let gnuplot treat the 'NaN' strings as gaps.
       write(udat,'(*(es20.10,1x))') x(i), ( y(j,i), j = 1, ns )
    end do
    close(udat)
+
    !---------------- gnuplot script ------------------------------------
    open(newunit=ugp,file='__tmp_plot.gp',status='replace')
    write(ugp,*) "set term pngcairo size 2500,1875"
@@ -434,8 +400,8 @@ subroutine make_plot_gnuplot(x, y, lbl, xt, yt, ttl, fname, logy, vlines)
    if (present(logy) .and. logy .and. any(good)) then
       write(ugp,*) "set logscale y"
       write(ugp,*) "set yrange [1e-3:*]"
-   end if                !! ← no manual yrange for linear plots
-   ! optional vertical dashed lines
+   end if
+
    if (present(vlines)) then
       do i = 1, size(vlines)
          write(ugp,'("set arrow from ",es14.6,", graph 0 to ",es14.6,", graph 1 nohead dt 2 lw 1")') &
@@ -443,40 +409,36 @@ subroutine make_plot_gnuplot(x, y, lbl, xt, yt, ttl, fname, logy, vlines)
       end do
    end if
 
-   ! style lines
    do j=1,ns
       c = tab10_hex(j-1)
       write(ugp,'("set style line ",i0," lt 1 lw 2 lc rgb ''",a,"''")') j, trim(c)
    end do
-   !---------------- plot command ---------------------------------------
-   if (.not. any(good)) then                       ! every curve is NaN
-      ! Establish finite axis limits
+
+   if (.not. any(good)) then
       write(ugp,*) "set xrange ["//trim(to_string(minval(x)))//":"// &
            trim(to_string(maxval(x)))//"]"
       write(ugp,*) "set yrange [0.0:1.0]"
-
-      ! Draw one invisible line to force the frame
       write(ugp,*) "plot '-' using 1:2 with lines lc rgb '#ffffff' notitle"
       write(ugp,*) x(1), 0.0_dp
       write(ugp,*) x(npts), 0.0_dp
       write(ugp,*) "e"
    else
       do first = 1, ns; if (good(first)) exit; end do
-         write(ugp,'("plot ''__tmp_data.dat'' using 1:",i0," with lines ls ",i0,&
-              " title ''",a,"''",$)') first+1, first, trim(lbl(first))
-         do k = first + 1, ns
-            if (good(k)) then
-               write(ugp,'(", ''__tmp_data.dat'' using 1:",i0," with lines ls ",i0,&
-                    " title ''",a,"''",$)') k+1, k, trim(lbl(k))
-            end if
-         end do
-         write(ugp,*)
+      write(ugp,'("plot ''__tmp_data.dat'' using 1:",i0," with lines ls ",i0,&
+           " title ''",a,"''",$)') first+1, first, trim(lbl(first))
+      do k = first + 1, ns
+         if (good(k)) then
+            write(ugp,'(", ''__tmp_data.dat'' using 1:",i0," with lines ls ",i0,&
+                 " title ''",a,"''",$)') k+1, k, trim(lbl(k))
+         end if
+      end do
+      write(ugp,*)
    end if
    close(ugp)
+
    !---------------- run & tidy -----------------------------------------
    call execute_command_line("gnuplot __tmp_plot.gp")
    call execute_command_line("rm -f __tmp_data.dat __tmp_plot.gp")
 end subroutine make_plot_gnuplot
-
 
 end program basic_example_use_of_diffusive_equilibrium_code_mpi
