@@ -1,25 +1,27 @@
 Read Me For Fortran Diffusive Equilibrium Code:
-Tested with gfortran 15.1 but should work on  GNU Fortran ≥ 10 | Any compiler that supports F2003–F2018 should work.
-gnuplot required for plotting only in example. Tested on gnuplot 6.0
+Tested with gfortran 15.1, but should work on  GNU Fortran ≥ 10 | Any compiler that supports F2003–F2018 should work.
+gnuplot is required for plotting only in the example. Tested on gnuplot 6.0 
 
-Cite **Nerney (2025)** if you use the solver in published work or code.
+Cite **Nerney (2025) and code at http://doi.org/10.5281/zenodo.15623974** if you use the solver in published work or code.
 We give permission to incorporate these routines into a user program if the copyright is acknowledged and Nerney (2025) is cited.
 
-Test Example For Io aligned Field line is in basic_example_use_of_diffusive_equilibrium_code.f90 run via Makefile via: make 
+Test Example For Io aligned Field line is in basic_example_use_of_diffusive_equilibrium_code.f90, or if uncommented in Makefile, MPI parallelized version basic_example_use_of_diffusive_equilibrium_code_mpi.f90, replacing compilation of basic_example_use_of_diffusive_equilibrium_code.f90 run via Makefile via: make all
 
-Which will compile helper modules/functions/subroutines from diffusive_equilibrium_mod.f90
+Tested on FC = gfortran for serial version and FC = mpifort for MPI parallelized version, both installed in Mac terminal via brew install gcc and brew install open-mpi (install open-mpi after gcc to have them properly linked), but can be managed via conda as well or using your preferred compiler or package manager. 
 
-and run a Single Io Aligned field line at Jupiter example taking the user through setup and then saving plots of output (gnuplot required for plots)
+Which will compile helper modules/functions/subroutines from diffusive_equilibrium_mod.f90, then run via ./run_diff_eq or if using the MPI parallelized version, mpirun -np numprocs ./run_diff_eq with numprocs = number of processors you wish to or have available to run the code in parallel on. 
 
-ASSUMES Last species is always core/cold electrons given by neutrality with all other species
+and run a Single Io Aligned field line at Jupiter example taking the user through setup and then saving plots of output (gnuplot required for plots). The parallelized version is implemented via static block decomposition, where the field line is chunked into approximately equal pieces, given the number of available processors specified in the MPI call. 
 
-Reads in field line trace at Io (JRM33+ Con2020), reference densities, temperatures, and kappa values/kappa temps. Gives reference at Centrifugal equator from Nerney (2025) 1D radial Centrifugal equator emperical model to then be extrapolated along a field line.
+ASSUMES the last species is always core/cold electrons, given by neutrality with all other species
 
-| **Swap distribution function** | Change `dist_tag` before the species loop; each species can differ but in this test case they are all the same.
+Reads in field line trace at Io (JRM33+ Con2020), reference densities, temperatures, and kappa values/kappa temps. Gives reference to the Centrifugal equator from Nerney (2025), a 1D radial Centrifugal equator empirical model to then be extrapolated along a field line.
+
+| **Swap distribution function** | Change `dist_tag` before the species loop; each species can differ, but in this test case, they are all the same.
 !Avaiable Distribution Types:
-   !character(len=32)              :: dist_tag = 'Maxwellian' ! Bagenal & Sullivan (1981) etc. Basic default Assumed isotropic always, ignores anisotropy
+   !character(len=32)              :: dist_tag = 'Maxwellian' ! Bagenal & Sullivan (1981) etc. Basic default, assumed isotropic always, ignores anisotropy
    !character(len=32)              :: dist_tag = 'Aniso_Maxwellian' ! Huang & Birmingham (1992) Anisotropic Maxwellian
-   !character(len=32)              :: dist_tag = 'Aniso_Maxwellian_Const_Tperp' ! Bagenal & Sullivan (1981), Bagenal (1994), Mei, Thorne, Bagenal (1995) Assumed Constant Anisotrpy along field line, inconsistent but good enough often 
+   !character(len=32)              :: dist_tag = 'Aniso_Maxwellian_Const_Tperp' ! Bagenal & Sullivan (1981), Bagenal (1994), Mei, Thorne, Bagenal (1995) Assumed Constant Anisotrpy along field line, inconsistent but good enough, often 
    !character(len=32)              :: dist_tag = 'Aniso_Kappa' ! Meyer-Vernet et al. (1995), Moncuquet et al. (2002) Anisotropic Standard Kappa distribution
    !character(len=32)              :: dist_tag = 'Aniso_Product_Kappa' ! Nerney (2025) Anisotropic Product Kappa Distribution 
    !character(len=32)              :: dist_tag = 'Fried_Egg' ! Nerney (2025) "Fried-Egg" Distribution Function (Maxwellian limit in parallel of aniso product kappa and still kappa in perp direction) 
@@ -42,26 +44,23 @@ git clone https://github.com/egnerney/Diffusive_Equilibrium_MOP_Community_Code
 cd /Diffusive_Equilibrium_MOP_Community_Code/Fortran_code
 
 # Compile & run in one go
-make FC=gfortran
-./run_diff_eq          # prints progress and writes PNGs in ./output
+
+Change the compiler and flags in the Makefile to match your use case/system.
+
+
+make all (with FC=gfortran for serial version or FC=mpifort for mpi and basic_example_use_of_diffusive_equilibrium_code.f90 replaced with basic_example_use_of_diffusive_equilibrium_code_mpi.f90 in Makefile
+./run_diff_eq      # For Serial version    # prints progress and writes PNGs in ./output
 ````
+
+or for mpi parallelized version use:
+
+mpirun -np numprocs ./run_diff_eq with numprocs = number of processors you wish to or have available to run the code in parallel on. 
 
 > **Tip:** On Windows use *WSL* or MSYS2; pass `FC=ifx`, `FC=ifort`, etc.,
 > depending on your compiler.
 
 ---
 
-## Compiling
-
-Change the compiler and flags in the Makefile to match your use case/system.
-
----
-
-## Running
-
-```
-./run_diff_eq
-```
 
 * Prints progress (`point 0 / 1340 …`).
 * Solves the electrostatic potential at each point via bisection.
@@ -84,7 +83,6 @@ Change the compiler and flags in the Makefile to match your use case/system.
 ```bash
 make clean        # removes *.o, *.mod, run_diff_eq
 ```
-
 ___________
 
 
@@ -115,7 +113,7 @@ SOFTWARE.
 
 External special-function subroutines carry their original licenses (see headers).
 
-Cite **Nerney (2025)** if you use the solver in published work or code.
+Cite **Nerney (2025) and code at http://doi.org/10.5281/zenodo.15623974** if you use the solver in published work or code.
 We give permission to incorporate this routine into a user program if the copyright is acknowledged and Nerney (2025) is cited.
 
 
